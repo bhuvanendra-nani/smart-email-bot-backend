@@ -1,6 +1,9 @@
 import base64
 import re
 
+import json
+import os
+
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
@@ -17,10 +20,27 @@ GMAIL_SCOPES = [
 # ============================================================
 
 def get_gmail_service():
-    creds = Credentials.from_authorized_user_file(
-        "credentials/token.json",
-        GMAIL_SCOPES,
-    )
+    token_json = os.getenv("GMAIL_TOKEN_JSON")
+
+    if token_json:
+        try:
+            token_data = json.loads(token_json)
+
+            creds = Credentials.from_authorized_user_info(
+                token_data,
+                GMAIL_SCOPES,
+            )
+
+        except Exception as error:
+            raise RuntimeError(
+                f"Invalid GMAIL_TOKEN_JSON: {error}"
+            )
+
+    else:
+        creds = Credentials.from_authorized_user_file(
+            "credentials/token.json",
+            GMAIL_SCOPES,
+        )
 
     return build(
         "gmail",
@@ -28,8 +48,6 @@ def get_gmail_service():
         credentials=creds,
         cache_discovery=False,
     )
-
-
 # ============================================================
 # HEADER HELPERS
 # ============================================================
