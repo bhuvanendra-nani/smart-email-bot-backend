@@ -6,3 +6,4 @@ class Base(DeclarativeBase):
 
 
 from app.models.task import Task, BotState
+from app.models.user import User
