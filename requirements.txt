@@ -26,8 +26,11 @@ python-dateutil
 
 psycopg2-binary
 
+psycopg
+
 itsdangerous
 
 authlib
 
 python-jose[cryptography]
+
