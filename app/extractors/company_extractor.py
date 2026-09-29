@@ -81,8 +81,10 @@ SUBJECT_NOISE = [
     r"^reminder\s*:\s*",
     r"^urgent\s*:\s*",
     r"^important\s*:\s*",
-    r"^congratulations\s*!*\s*",
-    r"^congratulation\s*!*\s*",
+    r"^updated\s*:\s*",
+    r"^update\s*:\s*",
+    r"^congratulations\s*!\s*",
+    r"^congratulation\s*!\s*",
 ]
 
 
@@ -91,12 +93,10 @@ SUBJECT_NOISE = [
 # ============================================================
 
 def clean(text: str) -> str:
-
     if not text:
         return ""
 
     text = re.sub(r"<[^>]+>", " ", text)
-
     text = re.sub(r"https?://\S+", " ", text)
 
     replacements = {
@@ -128,7 +128,6 @@ def clean(text: str) -> str:
 # ============================================================
 
 def clean_subject_prefix(subject: str) -> str:
-
     subject = clean(subject)
 
     previous = None
@@ -152,7 +151,6 @@ def clean_subject_prefix(subject: str) -> str:
 # ============================================================
 
 def is_valid_company(company: str) -> bool:
-
     if not company:
         return False
 
@@ -206,7 +204,6 @@ def is_valid_company(company: str) -> bool:
 # ============================================================
 
 def normalize_company(company: str) -> str:
-
     if not company:
         return ""
 
@@ -229,7 +226,7 @@ def normalize_company(company: str) -> str:
     # --------------------------------------------------------
 
     company = re.sub(
-        r"^congratulations\s*!*\s*",
+        r"^congratulations\s*!\s*",
         "",
         company,
         flags=re.IGNORECASE,
@@ -237,13 +234,10 @@ def normalize_company(company: str) -> str:
 
     # --------------------------------------------------------
     # Remove common recruitment suffixes
-    #
-    # IMPORTANT:
-    # "Super Dream" / "Dream" are not company names.
     # --------------------------------------------------------
 
     company = re.sub(
-        r"\s+(super\s+dream|dream)\s*$",
+        r"\s+(super\s+dream|dream)$",
         "",
         company,
         flags=re.IGNORECASE,
@@ -252,7 +246,7 @@ def normalize_company(company: str) -> str:
     company = re.sub(
         r"\s+(internship|placement|recruitment|hiring|"
         r"drive|opportunity|opening|selection|"
-        r"registration|assessment|test|interview)\s*$",
+        r"registration|assessment|test|interview)$",
         "",
         company,
         flags=re.IGNORECASE,
@@ -291,7 +285,6 @@ def normalize_company(company: str) -> str:
 # ============================================================
 
 def find_known_company(text: str) -> str:
-
     if not text:
         return ""
 
@@ -304,7 +297,6 @@ def find_known_company(text: str) -> str:
     )
 
     for company in companies:
-
         pattern = (
             rf"(?<![A-Za-z0-9])"
             rf"{re.escape(company)}"
@@ -326,29 +318,21 @@ def find_known_company(text: str) -> str:
 # ============================================================
 
 def extract_explicit_company(text: str) -> str:
-
     if not text:
         return ""
 
     text = clean(text)
 
     patterns = [
-
         r"\bname\s+of\s+the\s+company\s*[:\-]\s*([^|\n]{2,100})",
-
         r"\bcompany\s+name\s*[:\-]\s*([^|\n]{2,100})",
-
         r"\bcompany\s*[:\-]\s*([^|\n]{2,100})",
-
         r"\bemployer\s*[:\-]\s*([^|\n]{2,100})",
-
         r"\borganization\s*[:\-]\s*([^|\n]{2,100})",
-
         r"\bclient\s*[:\-]\s*([^|\n]{2,100})",
     ]
 
     for pattern in patterns:
-
         match = re.search(
             pattern,
             text,
@@ -390,7 +374,6 @@ def extract_explicit_company(text: str) -> str:
 # ============================================================
 
 def extract_company_from_subject(subject: str) -> str:
-
     subject = clean_subject_prefix(subject)
 
     if not subject:
@@ -420,9 +403,17 @@ def extract_company_from_subject(subject: str) -> str:
 
     working = subject
 
+    # Remove common prefixes that may remain after clean_subject_prefix
+    working = re.sub(
+        r"^(updated|update|urgent|important|reminder)\s*[:\-]\s*",
+        "",
+        working,
+        flags=re.IGNORECASE,
+    )
+
     # --------------------------------------------------------
     # IMPORTANT:
-    # Remove "Super Dream", "Dream", and "2027 batch"
+    # Remove "Super Dream", "Dream", and batch numbers
     # before generic extraction.
     # --------------------------------------------------------
 
@@ -434,7 +425,7 @@ def extract_company_from_subject(subject: str) -> str:
     )
 
     working = re.sub(
-        r"\b20(?:20|21|22|23|24|25|26|27|28|29|30|31|32|33|34|35)\b",
+        r"\b20\d{2}\b",
         " ",
         working,
     )
@@ -453,15 +444,97 @@ def extract_company_from_subject(subject: str) -> str:
     ).strip()
 
     # --------------------------------------------------------
-    # Generic subject patterns
+    # 1. Online test / assessment
+    #
+    # Examples:
+    #
+    # PharmaAce Online test is scheduled...
+    # MRF Tyres online test is scheduled...
+    # Company Online Assessment...
     # --------------------------------------------------------
 
     patterns = [
+        r"^(.{2,60}?)\s+(?:online\s+test|online\s+assessment)\b",
 
-        r"^(.{2,60}?)\s*\|\s*"
-        r"(?:internship|placement|assessment|test|hiring|"
-        r"recruitment|drive|selection|interview|registration)\b",
+        # "Company - Online Test"
+        r"^(.{2,60}?)\s*[-:]\s*"
+        r"(?:online\s+test|online\s+assessment)\b",
 
+        # "Company online test is..."
+        r"^(.{2,60}?)\s+"
+        r"(?:online\s+test|online\s+assessment)\b",
+    ]
+
+    for pattern in patterns:
+        match = re.search(
+            pattern,
+            working,
+            re.IGNORECASE,
+        )
+
+        if not match:
+            continue
+
+        candidate = normalize_company(match.group(1))
+
+        if not candidate:
+            continue
+
+        known = find_known_company(candidate)
+
+        if known:
+            return known
+
+        return candidate
+
+    # --------------------------------------------------------
+    # 2. Next round / selection process
+    #
+    # Examples:
+    #
+    # Schneider Electric next round of the selection process...
+    # JIO - BP Next round of selection process...
+    # --------------------------------------------------------
+
+    patterns = [
+        r"^(.{2,60}?)\s+"
+        r"next\s+round\s+(?:of\s+)?"
+        r"(?:the\s+)?selection\s+process\b",
+
+        r"^(.{2,60}?)\s+"
+        r"next\s+round\s+of\b",
+
+        r"^(.{2,60}?)\s+"
+        r"(?:selection\s+process|selection\s+round)\b",
+    ]
+
+    for pattern in patterns:
+        match = re.search(
+            pattern,
+            working,
+            re.IGNORECASE,
+        )
+
+        if not match:
+            continue
+
+        candidate = normalize_company(match.group(1))
+
+        if not candidate:
+            continue
+
+        known = find_known_company(candidate)
+
+        if known:
+            return known
+
+        return candidate
+
+    # --------------------------------------------------------
+    # 3. Generic subject patterns
+    # --------------------------------------------------------
+
+    patterns = [
         r"^(.{2,60}?)\s*[-:]\s*"
         r"(?:internship|placement|assessment|test|hiring|"
         r"recruitment|drive|selection|interview|registration)\b",
@@ -472,7 +545,6 @@ def extract_company_from_subject(subject: str) -> str:
     ]
 
     for pattern in patterns:
-
         match = re.search(
             pattern,
             working,
@@ -504,7 +576,6 @@ def extract_company_from_subject(subject: str) -> str:
 # ============================================================
 
 def extract_company_from_body(body: str) -> str:
-
     body = clean(body)
 
     if not body:
@@ -520,11 +591,19 @@ def extract_company_from_body(body: str) -> str:
         return company
 
     # --------------------------------------------------------
-    # 2. Strong sentence patterns
+    # 2. Known company anywhere in body
+    # --------------------------------------------------------
+
+    company = find_known_company(body)
+
+    if company:
+        return company
+
+    # --------------------------------------------------------
+    # 3. Strong sentence patterns
     # --------------------------------------------------------
 
     patterns = [
-
         r"\b(?:we are|we're|welcome to|join)\s+"
         r"([A-Z][A-Za-z0-9&.,'()\- ]{2,60}?)"
         r"\s+(?:for|as|at)\b",
@@ -538,7 +617,6 @@ def extract_company_from_body(body: str) -> str:
     ]
 
     for pattern in patterns:
-
         match = re.search(
             pattern,
             body,
@@ -571,7 +649,6 @@ def extract_company_from_body(body: str) -> str:
 # ============================================================
 
 def extract_company(subject, body):
-
     subject = subject or ""
     body = body or ""
 
